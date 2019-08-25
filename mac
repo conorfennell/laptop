@@ -43,6 +43,11 @@ if [ ! -f "$HOME/.zshrc" ]; then
   touch "$HOME/.zshrc"
 fi
 
+append_to_zshrc 'export ZSH=$HOME/.oh-my-zsh'
+append_to_zshrc 'ZSH_THEME="af-magic"'
+append_to_zshrc 'plugins=(git)'
+append_to_zshrc 'source $ZSH/oh-my-zsh.sh'
+
 # shellcheck disable=SC2016
 append_to_zshrc 'export PATH="$HOME/.bin:$PATH"'
 
@@ -114,7 +119,7 @@ tap "thoughtbot/formulae"
 tap "homebrew/services"
 tap "universal-ctags/universal-ctags"
 tap "caskroom/cask"
-tap "heroku/brew"
+
 
 # Unix
 brew "universal-ctags", args: ["HEAD"]
@@ -125,77 +130,69 @@ brew "reattach-to-user-namespace"
 brew "the_silver_searcher"
 brew "tmux"
 brew "vim"
-brew "watchman"
 brew "zsh"
+brew "jq"
 
-# Heroku
-brew "heroku/brew/heroku"
-brew "parity"
+# Programming language
+brew "jenv"
+brew "rbenv"
+brew "ruby-build"
 
-# GitHub
-brew "hub"
+brew "pyenv"
+brew "pyenv-virtualenv"
+brew "pyenv-virtualenvwrapper"
 
-# Image manipulation
-brew "imagemagick"
+# Kubernetes
+brew "kubectx"
+brew "kubernetes-helm"
+brew "kube-ps1"
 
-# Programming language prerequisites and package managers
-brew "libyaml" # should come after openssl
-brew "coreutils"
-brew "yarn"
-cask "gpg-suite"
+# Applications
+cask "anki"
+cask "slack"
+cask "visual-studio-code"
 
-# Databases
-brew "postgres", restart_service: :changed
-brew "redis", restart_service: :changed
 EOF
 
-fancy_echo "Update heroku binary ..."
-brew unlink heroku
-brew link --force heroku
+fancy_echo "Configuring Ruby ..."
+find_latest_ruby() {
+  rbenv install -l | grep -v - | tail -1 | sed -e 's/^ *//'
+}
 
-fancy_echo "Configuring asdf version manager ..."
-if [ ! -d "$HOME/.asdf" ]; then
-  git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.5.0
-  append_to_zshrc "source $HOME/.asdf/asdf.sh" 1
+ruby_version="$(find_latest_ruby)"
+
+# shellcheck disable=SC2016
+append_to_zshrc 'if which rbenv > /dev/null; then eval "$(rbenv init - --no-rehash)"; fi' 1
+eval "$(rbenv init -)"
+
+if ! rbenv versions | grep -Fq "$ruby_version"; then
+  RUBY_CONFIGURE_OPTS=--with-openssl-dir=/usr/local/opt/openssl rbenv install -s "$ruby_version"
 fi
 
-alias install_asdf_plugin=add_or_update_asdf_plugin
-add_or_update_asdf_plugin() {
-  local name="$1"
-  local url="$2"
-
-  if ! asdf plugin-list | grep -Fq "$name"; then
-    asdf plugin-add "$name" "$url"
-  else
-    asdf plugin-update "$name"
-  fi
-}
-
-# shellcheck disable=SC1090
-source "$HOME/.asdf/asdf.sh"
-add_or_update_asdf_plugin "ruby" "https://github.com/asdf-vm/asdf-ruby.git"
-add_or_update_asdf_plugin "nodejs" "https://github.com/asdf-vm/asdf-nodejs.git"
-
-install_asdf_language() {
-  local language="$1"
-  local version
-  version="$(asdf list-all "$language" | grep -v "[a-z]" | tail -1)"
-
-  if ! asdf list "$language" | grep -Fq "$version"; then
-    asdf install "$language" "$version"
-    asdf global "$language" "$version"
-  fi
-}
-
-fancy_echo "Installing latest Ruby ..."
-install_asdf_language "ruby"
+rbenv global "$ruby_version"
+rbenv shell "$ruby_version"
 gem update --system
+gem_install_or_update 'bundler'
 number_of_cores=$(sysctl -n hw.ncpu)
 bundle config --global jobs $((number_of_cores - 1))
 
-fancy_echo "Installing latest Node ..."
-bash "$HOME/.asdf/plugins/nodejs/bin/import-release-team-keyring"
-install_asdf_language "nodejs"
+append_to_zshrc 'source "/usr/local/opt/kube-ps1/share/kube-ps1.sh"'
+append_to_zshrc 'PS1="$(kube_ps1)"$PS1'
+
+append_to_zshrc 'if which pyenv > /dev/null; then eval "$(pyenv init -)"; fi' 1
+append_to_zshrc 'if which pyenv-virtualenv-init > /dev/null; then eval "$(pyenv virtualenv-init -)"; fi' 1
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+CFLAGS="-I$(xcrun --show-sdk-path)/usr/include" pyenv install -s 2.7.16
+CFLAGS="-I$(xcrun --show-sdk-path)/usr/include" pyenv install -s 3.7.4
+pyenv global 2.7.16 3.7.4
+pyenv virtualenvwrapper
+
+if [ -d ~/.oh-my-zsh ]; then
+  echo "oh-my-zsh already installed, skipping..."
+else
+  git clone git://github.com/robbyrussell/oh-my-zsh.git ~/.oh-my-zsh
+fi
 
 if [ -f "$HOME/.laptop.local" ]; then
   fancy_echo "Running your customizations from ~/.laptop.local ..."
